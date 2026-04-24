@@ -36,6 +36,30 @@ iso_from_epoch() {
   fi
 }
 
+update_index() {
+  local tmp_index
+  tmp_index="$(mktemp)"
+
+  (
+    cd "$script_dir"
+    find . -path ./.git -prune -o -type f -name '*.md' -print |
+      sed 's#^\./##' |
+      awk -F/ 'tolower($NF) != "readme.md"' |
+      sort |
+      jq -R -s 'split("\n")[:-1]'
+  ) >"$tmp_index"
+
+  if [ ! -f "$script_dir/index.json" ] || ! cmp -s "$tmp_index" "$script_dir/index.json"; then
+    mv "$tmp_index" "$script_dir/index.json"
+    git -C "$script_dir" add -- index.json
+    git -C "$script_dir" commit --only -m "Update index.json" -- index.json
+    return 0
+  fi
+
+  rm -f "$tmp_index"
+  return 1
+}
+
 now_epoch="$(date +%s)"
 cutoff_epoch="$((now_epoch - (DAYS_OLD * 86400)))"
 copied=0
@@ -84,4 +108,10 @@ if [ "$copied" -eq 0 ]; then
   echo "No eligible markdown files to sync."
 else
   echo "Synced and committed $copied markdown file(s)."
+fi
+
+if update_index; then
+  echo "Updated and committed index.json."
+else
+  echo "index.json is already up to date."
 fi
